@@ -116,7 +116,7 @@ namespace CS332_Lab5.LSistems
             return new List<string> { rules[symbol] };
         }
 
-        private List<PointF> InterpretString(string lSystemString, Size canvasSize)
+        protected List<PointF> InterpretString(string lSystemString, Size canvasSize)
         {
             List<PointF> points = new List<PointF>();
             Stack<TurtleState> stateStack = new Stack<TurtleState>();
@@ -255,61 +255,6 @@ namespace CS332_Lab5.LSistems
                 Direction = Direction,
                 Step = Step
             };
-        }
-    }
-
-    // Пример использования в WinForms
-    public class LSystemPanel : Panel
-    {
-        public BaseLSystem lSystem;
-        private List<PointF> points;
-
-        public LSystemPanel()
-        {
-            lSystem = new BaseLSystem();
-            points = new List<PointF>();
-            this.DoubleBuffered = true;
-            this.BackColor = Color.White;
-        }
-
-        public void LoadLSystem(string filePath)
-        {
-            lSystem.LoadFromFile(filePath);
-            GenerateFractal();
-        }
-
-        public void GenerateFractal()
-        {
-            points = lSystem.GeneratePoints(this.Size);
-            this.Invalidate();
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            base.OnPaint(e);
-
-            if (points.Count == 0) return;
-
-            using (Pen pen = new Pen(Color.Black, 1))
-            {
-                for (int i = 1; i < points.Count; i++)
-                {
-                    if (!float.IsNaN(points[i].X) && !float.IsNaN(points[i].Y) &&
-                        !float.IsNaN(points[i - 1].X) && !float.IsNaN(points[i - 1].Y))
-                    {
-                        e.Graphics.DrawLine(pen, points[i - 1], points[i]);
-                    }
-                }
-            }
-        }
-
-        protected override void OnResize(EventArgs e)
-        {
-            base.OnResize(e);
-            if (points.Count > 0)
-            {
-                GenerateFractal();
-            }
         }
     }
 }

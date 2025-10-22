@@ -47,6 +47,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="LSystems\BaseLSystem.cs" />
+    <Compile Include="LSystems\RealisticTreeLSystem.cs" />
     <Compile Include="Menu.cs">
       <SubType>Form</SubType>
     </Compile>
