@@ -13,48 +13,81 @@ namespace CS332_Lab5
 {
     public partial class Menu : Form
     {
-        private BaseLSystem lsystem = new BaseLSystem();
-     
+        private BaseLSystem lSystem;
+        private List<PointF> points;
+
 
         public Menu()
         {
+            lSystem = new BaseLSystem();
+            points = new List<PointF>();
             InitializeComponent();
         }
 
-        private void btnLoad_Click(object sender, EventArgs e)
-        {
-            OpenFileDialog dialog = new OpenFileDialog();
-            dialog.Filter = "L-system files (*.lsys)|*.lsys|All files (*.*)|*.*";
 
-            if (dialog.ShowDialog() == DialogResult.OK)
+        private void GenerateFractal()
+        {
+            if (lSystem != null)
             {
-                if (lsystem.LoadFromFile(dialog.FileName))
+                points = lSystem.GeneratePoints(this.ClientSize);
+                this.Invalidate();
+            }
+        }
+
+        private void loadFileToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Filter = "L-System files (*.lsys)|*.lsys|All files (*.*)|*.*";
+                if (dialog.ShowDialog() == DialogResult.OK)
                 {
-                    lsystem.Iterations = 4;
-                    lsystem.StepLength = 5f;
-                    lsystem.Randomness = 0; // 10% случайности
-                    panel1.Invalidate(); // Перерисовать
+                    lSystem.LoadFromFile(dialog.FileName);
+                    lSystem.Iterations = (int)numericUpDown1.Value;
+                    GenerateFractal();
                 }
             }
         }
 
-        private void panel1_Paint(object sender, PaintEventArgs e)
+        protected override void OnPaint(PaintEventArgs e)
         {
+            base.OnPaint(e);
+
             e.Graphics.Clear(Color.White);
-            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-            lsystem.RenderAutoScale(e.Graphics, panel1.ClientRectangle);
+            if (points == null || points.Count == 0)
+                return;
 
-            PointF center = new PointF(panel1.Width / 2, panel1.Height / 2);
-            lsystem.Render(e.Graphics, center, lsystem.Iterations);
+            using (Pen pen = new Pen(Color.Black, 1))
+            {
+                for (int i = 1; i < points.Count; i++)
+                {
+                    if (!float.IsNaN(points[i].X) && !float.IsNaN(points[i].Y) &&
+                        !float.IsNaN(points[i - 1].X) && !float.IsNaN(points[i - 1].Y))
+                    {
+                        e.Graphics.DrawLine(pen, points[i - 1], points[i]);
+                    }
+                }
+            }
         }
 
-
-
-        private void trackBarIterations_Scroll(object sender, EventArgs e)
+        private void numericUpDown1_ValueChanged(object sender, EventArgs e)
         {
-            lsystem.Iterations = trackBarIterations.Value;
-            panel1.Invalidate();
+            lSystem.Iterations = (int)numericUpDown1.Value;
+            GenerateFractal();
+        }
+
+        private void checkBox1_CheckedChanged(object sender, EventArgs e)
+        {
+            lSystem.UseRandomness = checkBox1.Checked;
+
+            label2.Visible = checkBox1.Checked;
+            numericUpDown2.Enabled = checkBox1.Checked;
+            numericUpDown2.Visible = checkBox1.Checked;
+        }
+
+        private void numericUpDown2_ValueChanged(object sender, EventArgs e)
+        {
+            lSystem.RandomnessFactor = (int)numericUpDown2.Value / 100.00;
         }
     }
 }

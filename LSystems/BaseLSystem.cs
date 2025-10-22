@@ -11,336 +11,305 @@ namespace CS332_Lab5.LSistems
 {
     /// <summary>
     /// Базовая L-система.
-    /// Умеет:
-    /// - Чтение описания L-систем из текстовых файлов
-    /// - Поддержка разветвлений (скобки в правилах)
-    /// - Добавление случайности в построение
     /// </summary>
     public class BaseLSystem
     {
-        private Random random = new Random();
+        private string axiom;
+        private double angle;
+        private double initialDirection;
+        private Dictionary<char, string> rules;
+        private Random random;
 
-        // Основные параметры системы
-        public string Axiom { get; private set; } = "F";
-        public float Angle { get; private set; } = 90f;
-        public float InitialDirection { get; private set; } = 0f;
-        public int Iterations { get; set; } = 3;
-        public float StepLength { get; set; } = 10f;
-        public float Randomness { get; set; } = 0f; // 0-1, степень случайности
-        public float Scale { get; set; } = 1.0f; // Масштаб
-        public float ScaleFactor { get; set; } = 0.8f; // Коэффициент масштабирования для каждой итерации
+        public double Scale { get; set; } = 1.0;
+        public int Iterations { get; set; } = 4;
+        public double StepLength { get; set; } = 10.0;
+        public bool UseRandomness { get; set; } = false;
+        public double RandomnessFactor { get; set; } = 0.1;
 
-        // Правила замены
-        private Dictionary<char, string> rules = new Dictionary<char, string>();
-
-        // Стек для ветвлений
-        private Stack<(PointF position, float angle, float stepLength)> stateStack = new Stack<(PointF, float, float)>();
-
-        // Результат построения
-        public List<LineSegment> Segments { get; private set; } = new List<LineSegment>();
-
-        // Границы рисунка для автоматического масштабирования
-        public RectangleF Bounds { get; private set; }
-
-        public class LineSegment
+        public BaseLSystem()
         {
-            public PointF Start { get; set; }
-            public PointF End { get; set; }
-            public Color Color { get; set; } = Color.Black;
-            public float Width { get; set; } = 1f;
+            rules = new Dictionary<char, string>();
+            random = new Random();
         }
 
-        // Загрузка системы из файла
-        public bool LoadFromFile(string filename)
+        public void LoadFromFile(string filePath)
         {
-            try
+            if (!File.Exists(filePath))
+                throw new FileNotFoundException($"Файл конфигурации не найден: {filePath}");
+
+            var lines = File.ReadAllLines(filePath)
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .ToArray();
+
+            if (lines.Length < 1)
+                throw new InvalidDataException("Файл конфигурации пуст");
+
+            // Парсинг первой строки: <атом> <угол поворота> <начальное направление>
+            var firstLineParts = lines[0].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (firstLineParts.Length < 3)
+                throw new InvalidDataException("Неверный формат первой строки конфигурационного файла");
+
+            axiom = firstLineParts[0];
+            angle = double.Parse(firstLineParts[1]);
+            initialDirection = double.Parse(firstLineParts[2]);
+
+            // Парсинг правил
+            rules.Clear();
+            for (int i = 1; i < lines.Length; i++)
             {
-                rules.Clear();
-                var lines = File.ReadAllLines(filename).Where(line => !string.IsNullOrWhiteSpace(line)).ToArray();
-
-                if (lines.Length < 1)
-                    return false;
-
-                // Первая строка: аксиома, угол, начальное направление
-                var firstLine = lines[0].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                if (firstLine.Length >= 1) Axiom = firstLine[0];
-                if (firstLine.Length >= 2) Angle = float.Parse(firstLine[1]);
-                if (firstLine.Length >= 3) InitialDirection = float.Parse(firstLine[2]);
-
-                // Остальные строки: правила
-                for (int i = 1; i < lines.Length; i++)
+                var ruleParts = lines[i].Split(new[] { '=' }, 2, StringSplitOptions.RemoveEmptyEntries);
+                if (ruleParts.Length == 2)
                 {
-                    var ruleParts = lines[i].Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
-                    if (ruleParts.Length == 2)
-                    {
-                        char predecessor = ruleParts[0][0];
-                        rules[predecessor] = ruleParts[1];
-                    }
+                    char symbol = ruleParts[0].Trim()[0];
+                    string replacement = ruleParts[1].Trim();
+                    rules[symbol] = replacement;
                 }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка загрузки файла: {ex.Message}");
-                return false;
             }
         }
 
-        // Генерация строки после N итераций
-        public string GenerateString(int iterations)
+        public List<PointF> GeneratePoints(Size canvasSize)
         {
-            string current = Axiom;
+            string result = GenerateString(axiom, Iterations);
+            return InterpretString(result, canvasSize);
+        }
 
-            for (int i = 0; i < iterations; i++)
+        private string GenerateString(string input, int iterations)
+        {
+            if (iterations == 0)
+                return input;
+
+            StringBuilder result = new StringBuilder();
+            foreach (char c in input)
             {
-                string next = "";
-                foreach (char c in current)
+                if (rules.ContainsKey(c))
                 {
-                    if (rules.ContainsKey(c))
+                    if (UseRandomness && random.NextDouble() < RandomnessFactor)
                     {
-                        // Добавляем случайность в замену
-                        if (Randomness > 0 && random.NextDouble() < Randomness)
+                        // Случайная замена на один из возможных вариантов
+                        var possibleReplacements = GetPossibleReplacements(c);
+                        if (possibleReplacements.Count > 0)
                         {
-                            next += c; // Иногда оставляем оригинальный символ
+                            int index = random.Next(possibleReplacements.Count);
+                            result.Append(possibleReplacements[index]);
                         }
                         else
                         {
-                            next += rules[c];
+                            result.Append(rules[c]);
                         }
                     }
                     else
                     {
-                        next += c;
+                        result.Append(rules[c]);
                     }
                 }
-                current = next;
+                else
+                {
+                    result.Append(c);
+                }
             }
 
-            return current;
+            return GenerateString(result.ToString(), iterations - 1);
         }
 
-        // Визуализация L-системы
-        public void Render(Graphics graphics, PointF startPosition, int iterations)
+        private List<string> GetPossibleReplacements(char symbol)
         {
-            Segments.Clear();
-            stateStack.Clear();
+            return new List<string> { rules[symbol] };
+        }
 
-            string lstring = GenerateString(iterations);
-            PointF currentPosition = startPosition;
-            float currentAngle = InitialDirection;
-            float currentStepLength = StepLength * Scale;
+        private List<PointF> InterpretString(string lSystemString, Size canvasSize)
+        {
+            List<PointF> points = new List<PointF>();
+            Stack<TurtleState> stateStack = new Stack<TurtleState>();
 
-            // Автоматическое масштабирование длины шага в зависимости от итераций
-            if (ScaleFactor != 1.0f)
+            TurtleState currentState = new TurtleState
             {
-                currentStepLength *= (float)Math.Pow(ScaleFactor, iterations);
-            }
+                Position = new PointF(canvasSize.Width / 2f, canvasSize.Height / 2f),
+                Direction = initialDirection,
+                Step = (float)(StepLength * Scale)
+            };
 
-            foreach (char c in lstring)
+            points.Add(currentState.Position);
+
+            foreach (char c in lSystemString)
             {
                 switch (c)
                 {
-                    case 'F': // Движение вперед с рисованием
-                    case 'G': // Движение вперед с рисованием (альтернатива)
-                        PointF newPosition = CalculateNewPosition(currentPosition, currentAngle, currentStepLength);
-                        Segments.Add(new LineSegment
-                        {
-                            Start = currentPosition,
-                            End = newPosition,
-                            Width = Math.Max(0.5f, currentStepLength / 10f) // Толщина линии зависит от масштаба
-                        });
-                        currentPosition = newPosition;
+                    case 'F':
+                    case 'G':
+                    case 'A':
+                    case 'B':
+                        // Движение вперед с рисованием
+                        currentState.Position = CalculateNewPosition(currentState);
+                        points.Add(currentState.Position);
                         break;
 
-                    case 'f': // Движение вперед без рисования
-                    case 'g': // Движение вперед без рисования (альтернатива)
-                        currentPosition = CalculateNewPosition(currentPosition, currentAngle, currentStepLength);
+                    case '+':
+                        // Поворот направо
+                        currentState.Direction -= GetAdjustedAngle();
                         break;
 
-                    case '+': // Поворот налево
-                        currentAngle += GetAngleWithRandomness();
+                    case '-':
+                        // Поворот налево
+                        currentState.Direction += GetAdjustedAngle();
                         break;
 
-                    case '-': // Поворот направо
-                        currentAngle -= GetAngleWithRandomness();
+                    case '[':
+                        // Сохранение состояния (начало ветвления)
+                        stateStack.Push(currentState.Clone());
                         break;
 
-                    case '[': // Сохраняем состояние (начало ветвления)
-                        stateStack.Push((currentPosition, currentAngle, currentStepLength));
-                        // Уменьшаем длину шага для ветвей (опционально)
-                        currentStepLength *= ScaleFactor;
-                        break;
-
-                    case ']': // Восстанавливаем состояние (конец ветвления)
+                    case ']':
+                        // Восстановление состояния (конец ветвления)
                         if (stateStack.Count > 0)
                         {
-                            var state = stateStack.Pop();
-                            currentPosition = state.position;
-                            currentAngle = state.angle;
-                            currentStepLength = state.stepLength;
+                            currentState = stateStack.Pop();
+                            points.Add(new PointF(float.NaN, float.NaN)); // Маркер разрыва
+                            points.Add(currentState.Position);
                         }
                         break;
 
-                        // Игнорируем другие символы
                 }
             }
 
-            // Вычисляем границы рисунка
-            CalculateBounds();
+            return NormalizePoints(points, canvasSize);
+        }
 
-            // Отрисовка всех сегментов
-            foreach (var segment in Segments)
+        private PointF CalculateNewPosition(TurtleState state)
+        {
+            double rad = state.Direction * Math.PI / 180.0;
+            float newX = state.Position.X + (float)(state.Step * Math.Cos(rad));
+            float newY = state.Position.Y + (float)(state.Step * Math.Sin(rad));
+            return new PointF(newX, newY);
+        }
+
+        private double GetAdjustedAngle()
+        {
+            if (UseRandomness)
             {
-                using (Pen pen = new Pen(segment.Color, segment.Width))
+                double variation = (random.NextDouble() - 0.5) * 2 * RandomnessFactor * angle;
+                return angle + variation;
+            }
+            return angle;
+        }
+
+        private List<PointF> NormalizePoints(List<PointF> points, Size canvasSize)
+        {
+            if (points.Count == 0) return points;
+
+            // Находим границы
+            float minX = float.MaxValue, minY = float.MaxValue;
+            float maxX = float.MinValue, maxY = float.MinValue;
+
+            foreach (var point in points)
+            {
+                if (!float.IsNaN(point.X) && !float.IsNaN(point.Y))
                 {
-                    graphics.DrawLine(pen, segment.Start, segment.End);
+                    minX = Math.Min(minX, point.X);
+                    minY = Math.Min(minY, point.Y);
+                    maxX = Math.Max(maxX, point.X);
+                    maxY = Math.Max(maxY, point.Y);
                 }
             }
-        }
 
-        // Визуализация с автоматическим масштабированием под размер контрола
-        public void RenderAutoScale(Graphics graphics, RectangleF bounds)
-        {
-            if (Segments.Count == 0) return;
+            // Масштабируем и центрируем
+            float width = maxX - minX;
+            float height = maxY - minY;
 
-            // Вычисляем масштаб для fitting'а
-            float scaleX = bounds.Width / Bounds.Width;
-            float scaleY = bounds.Height / Bounds.Height;
-            float autoScale = Math.Min(scaleX, scaleY) * 0.9f; // 90% чтобы были отступы
+            if (width == 0 || height == 0)
+                return points;
 
-            PointF center = new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
-            PointF offset = new PointF(
-                center.X - (Bounds.X + Bounds.Width / 2) * autoScale,
-                center.Y - (Bounds.Y + Bounds.Height / 2) * autoScale
-            );
+            float scaleX = (canvasSize.Width * 0.8f) / width;
+            float scaleY = (canvasSize.Height * 0.8f) / height;
+            float scale = Math.Min(scaleX, scaleY);
 
-            // Отрисовка с масштабированием
-            foreach (var segment in Segments)
+            List<PointF> normalizedPoints = new List<PointF>();
+            foreach (var point in points)
             {
-                PointF start = new PointF(
-                    segment.Start.X * autoScale + offset.X,
-                    segment.Start.Y * autoScale + offset.Y
-                );
-                PointF end = new PointF(
-                    segment.End.X * autoScale + offset.X,
-                    segment.End.Y * autoScale + offset.Y
-                );
-
-                using (Pen pen = new Pen(segment.Color, Math.Max(0.5f, segment.Width * autoScale)))
+                if (float.IsNaN(point.X) || float.IsNaN(point.Y))
                 {
-                    graphics.DrawLine(pen, start, end);
+                    normalizedPoints.Add(point);
+                }
+                else
+                {
+                    float x = (point.X - minX) * scale + (canvasSize.Width - width * scale) / 2;
+                    float y = (point.Y - minY) * scale + (canvasSize.Height - height * scale) / 2;
+                    normalizedPoints.Add(new PointF(x, y));
                 }
             }
-        }
 
-        // Вычисление границ рисунка
-        private void CalculateBounds()
+            return normalizedPoints;
+        }
+    }
+
+    public class TurtleState
+    {
+        public PointF Position { get; set; }
+        public double Direction { get; set; }
+        public float Step { get; set; }
+
+        public TurtleState Clone()
         {
-            if (Segments.Count == 0)
+            return new TurtleState
             {
-                Bounds = RectangleF.Empty;
-                return;
-            }
+                Position = new PointF(Position.X, Position.Y),
+                Direction = Direction,
+                Step = Step
+            };
+        }
+    }
 
-            float minX = Segments[0].Start.X;
-            float minY = Segments[0].Start.Y;
-            float maxX = Segments[0].Start.X;
-            float maxY = Segments[0].Start.Y;
+    // Пример использования в WinForms
+    public class LSystemPanel : Panel
+    {
+        public BaseLSystem lSystem;
+        private List<PointF> points;
 
-            foreach (var segment in Segments)
+        public LSystemPanel()
+        {
+            lSystem = new BaseLSystem();
+            points = new List<PointF>();
+            this.DoubleBuffered = true;
+            this.BackColor = Color.White;
+        }
+
+        public void LoadLSystem(string filePath)
+        {
+            lSystem.LoadFromFile(filePath);
+            GenerateFractal();
+        }
+
+        public void GenerateFractal()
+        {
+            points = lSystem.GeneratePoints(this.Size);
+            this.Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+
+            if (points.Count == 0) return;
+
+            using (Pen pen = new Pen(Color.Black, 1))
             {
-                minX = Math.Min(minX, Math.Min(segment.Start.X, segment.End.X));
-                minY = Math.Min(minY, Math.Min(segment.Start.Y, segment.End.Y));
-                maxX = Math.Max(maxX, Math.Max(segment.Start.X, segment.End.X));
-                maxY = Math.Max(maxY, Math.Max(segment.Start.Y, segment.End.Y));
-            }
-
-            Bounds = new RectangleF(minX, minY, maxX - minX, maxY - minY);
-        }
-
-        private PointF CalculateNewPosition(PointF position, float angle, float distance)
-        {
-            float angleRad = angle * (float)Math.PI / 180f;
-            float dx = (float)Math.Cos(angleRad) * distance;
-            float dy = (float)Math.Sin(angleRad) * distance;
-
-            return new PointF(position.X + dx, position.Y + dy);
-        }
-
-        private float GetAngleWithRandomness()
-        {
-            if (Randomness == 0)
-                return Angle;
-
-            // Добавляем случайное отклонение к углу
-            float randomFactor = (float)(random.NextDouble() * 2 - 1) * Randomness;
-            return Angle * (1 + randomFactor * 0.5f); // ±50% отклонение
-        }
-
-        // Сохранение системы в файл
-        public void SaveToFile(string filename)
-        {
-            try
-            {
-                using (StreamWriter writer = new StreamWriter(filename))
+                for (int i = 1; i < points.Count; i++)
                 {
-                    writer.WriteLine($"{Axiom} {Angle} {InitialDirection}");
-
-                    foreach (var rule in rules)
+                    if (!float.IsNaN(points[i].X) && !float.IsNaN(points[i].Y) &&
+                        !float.IsNaN(points[i - 1].X) && !float.IsNaN(points[i - 1].Y))
                     {
-                        writer.WriteLine($"{rule.Key} {rule.Value}");
+                        e.Graphics.DrawLine(pen, points[i - 1], points[i]);
                     }
                 }
             }
-            catch (Exception ex)
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (points.Count > 0)
             {
-                MessageBox.Show($"Ошибка сохранения файла: {ex.Message}");
+                GenerateFractal();
             }
-        }
-
-        // Добавление/изменение правила
-        public void SetRule(char predecessor, string successor)
-        {
-            rules[predecessor] = successor;
-        }
-
-        // Удаление правила
-        public void RemoveRule(char predecessor)
-        {
-            rules.Remove(predecessor);
-        }
-
-        // Получение всех правил
-        public Dictionary<char, string> GetRules()
-        {
-            return new Dictionary<char, string>(rules);
-        }
-
-        // Методы для управления масштабированием
-        public void ZoomIn()
-        {
-            Scale *= 1.2f;
-        }
-
-        public void ZoomOut()
-        {
-            Scale /= 1.2f;
-        }
-
-        public void ResetZoom()
-        {
-            Scale = 1.0f;
-        }
-
-        // Установка масштаба по ширине контрола
-        public void FitToSize(float width, float height)
-        {
-            if (Bounds.IsEmpty) return;
-
-            float scaleX = width / Bounds.Width;
-            float scaleY = height / Bounds.Height;
-            Scale = Math.Min(scaleX, scaleY) * 0.9f;
         }
     }
 }
