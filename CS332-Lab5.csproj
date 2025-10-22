@@ -46,6 +46,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CompositeBezierCurve.cs" />
     <Compile Include="LSystems\BaseLSystem.cs" />
     <Compile Include="LSystems\RealisticTreeLSystem.cs" />
     <Compile Include="Menu.cs">
