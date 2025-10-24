@@ -212,14 +212,11 @@ namespace CS332_Lab5
         {
             mountainPreview.Visible = flag;
             roughnessTrackBar.Visible = flag;
-            heightTrackBar.Visible = flag;
             iterationsTrackBar.Visible = flag;
             generateMountainBtn.Visible = flag;
-            stepByStepBtn.Visible = flag;
             resetMountainBtn.Visible = flag;
             iterationViewTrackBar.Visible = flag;
             roughnessLabel.Visible = flag;
-            heightLabel.Visible = flag;
             iterationsLabel.Visible = flag;
             currentIterationLabel.Visible = flag;
 
@@ -255,11 +252,9 @@ namespace CS332_Lab5
         private void UpdateMountainParameters()
         {
             mountainGenerator.Roughness = roughnessTrackBar.Value / 50.0;
-            mountainGenerator.InitialHeight = heightTrackBar.Value / 10.0;
             mountainGenerator.Iterations = iterationsTrackBar.Value;
 
-            roughnessLabel.Text = $"Шероховатость: {mountainGenerator.Roughness:F2}";
-            heightLabel.Text = $"Выоста: {mountainGenerator.InitialHeight:F1}";
+            roughnessLabel.Text = $"Шероховатость: {mountainGenerator.Roughness}";
             iterationsLabel.Text = $"Итерации: {mountainGenerator.Iterations}";
 
             iterationViewTrackBar.Maximum = mountainGenerator.Iterations;
@@ -315,12 +310,7 @@ namespace CS332_Lab5
             UpdateMountainPreview();
         }
 
-        private void stepByStepBtn_Click(object sender, EventArgs e)
-        {
-            mountainGenerator.StepByStep();
-            iterationViewTrackBar.Value = mountainGenerator.CurrentIteration;
-            UpdateMountainPreview();
-        }
+        
 
         private void resetMountainBtn_Click(object sender, EventArgs e)
         {

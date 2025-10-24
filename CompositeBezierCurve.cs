@@ -8,7 +8,9 @@ namespace CS332_Lab5.BezierCurves
 {
     public class CompositeBezierCurve
     {
-        private List<PointF> controlPoints;
+        private List<PointF> MyPoints;
+        private List<Line> lines;
+
         public bool SmoothConnectionsEnabled { get; set; } = true;
         private int selectedPointIndex = -1;
         private const float PointRadius = 6f;
@@ -24,160 +26,94 @@ namespace CS332_Lab5.BezierCurves
         public bool ShowTangents { get; set; } = true;
         public int SegmentsPerCurve { get; set; } = 50;
 
-        public IReadOnlyList<PointF> ControlPoints => controlPoints.AsReadOnly();
-        public int SegmentCount => Math.Max(0, (controlPoints.Count - 1) / 3);
-        public bool HasPoints => controlPoints.Count >= 4;
+        public IReadOnlyList<PointF> ControlPoints => MyPoints.AsReadOnly();
+        public int SegmentCount => Math.Max(0, (MyPoints.Count - 1) / 3);
+        public bool HasPoints => MyPoints.Count >= 4;
+
+        private const float STEP = 0.02f;
 
         public CompositeBezierCurve()
         {
-            controlPoints = new List<PointF>();
+            MyPoints = new List<PointF>();
+            lines = new List<Line>();
         }
 
-        public void AddPoint(PointF point)
+        private void DrawPoints(Graphics g)
         {
-            if (controlPoints.Count == 0)
+            for (int i = 0; i < MyPoints.Count; i++)
             {
-                // Первая точка
-                controlPoints.Add(point);
-            }
-            else if ((controlPoints.Count - 1) % 3 == 0)
-            {
-                PointF lastPoint = controlPoints.Last();
+                Color color = (i % 3 == 0) ? PointColor : TangentColor;
+                float r = (i % 3 == 0) ? PointRadius : PointRadius * 0.7f;
 
-                // Направление для плавного соединения
-                Vector2 direction;
-                if (controlPoints.Count >= 4)
+                using (Brush brush = new SolidBrush(color))
+                    g.FillEllipse(brush, MyPoints[i].X - r, MyPoints[i].Y - r, r * 2, r * 2);
+
+                if (i == selectedPointIndex)
                 {
-                    PointF prevControl = controlPoints[controlPoints.Count - 2];
-                    direction = new Vector2(lastPoint.X - prevControl.X, lastPoint.Y - prevControl.Y).Normalize();
+                    using (Pen p = new Pen(Color.Yellow, 2))
+                        g.DrawEllipse(p, MyPoints[i].X - r - 2, MyPoints[i].Y - r - 2, (r + 2) * 2, (r + 2) * 2);
                 }
-                else
-                {
-                    direction = new Vector2(1, 0);
-                }
-
-                float defaultLength = 50f;
-
-                PointF control1 = new PointF(
-                    lastPoint.X + direction.X * defaultLength,
-                    lastPoint.Y + direction.Y * defaultLength
-                );
-
-                PointF control2 = new PointF(
-                    point.X - direction.X * defaultLength,
-                    point.Y - direction.Y * defaultLength
-                );
-
-                controlPoints.Add(control1);
-                controlPoints.Add(control2);
-                controlPoints.Add(point);
-
-                if (SmoothConnectionsEnabled)
-                    UpdateAllSmoothConnections();
             }
         }
 
-        public void RemovePoint(int pointIndex)
+        public void Draw(Graphics g)
         {
-            if (pointIndex < 0 || pointIndex >= controlPoints.Count) return;
+            if (MyPoints.Count < 4) return;
 
-            if (pointIndex % 3 == 0)
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            // Рисование контрольных линий
+            for (int i = 0; i < MyPoints.Count; i += 3)
             {
-                // Удаляем весь сегмент, связанный с этой якорной точкой
-                if (pointIndex == 0 && controlPoints.Count >= 4)
-                    controlPoints.RemoveRange(0, 4);
-                else if (pointIndex == controlPoints.Count - 1 && controlPoints.Count >= 4)
-                    controlPoints.RemoveRange(controlPoints.Count - 4, 4);
-                else if (pointIndex > 0 && pointIndex < controlPoints.Count - 1)
+                if (i + 1 < MyPoints.Count)
                 {
-                    int start = pointIndex - 1;
-                    if (start + 3 < controlPoints.Count)
-                        controlPoints.RemoveRange(start, 3);
+                    g.DrawLine(new Pen(PolygonColor, PolygonWidth),
+                              MyPoints[i], MyPoints[i + 1]);
                 }
 
-                if (SmoothConnectionsEnabled)
-                    UpdateAllSmoothConnections();
+                if (i + 1 < MyPoints.Count && i + 2 < MyPoints.Count)
+                {
+                    g.DrawLine(new Pen(PolygonColor, PolygonWidth),
+                              MyPoints[i + 1], MyPoints[i + 2]);
+                }
+
+                if (i + 2 < MyPoints.Count && i + 3 < MyPoints.Count)
+                {
+                    g.DrawLine(new Pen(PolygonColor, PolygonWidth),
+                              MyPoints[i + 2], MyPoints[i + 3]);
+                }
             }
-            else
+
+            // Рисование кривых Безье
+            using (Pen curvePen = new Pen(CurveColor, CurveWidth))
             {
-                controlPoints.RemoveAt(pointIndex);
-                if (SmoothConnectionsEnabled)
-                    UpdateAllSmoothConnections();
+                foreach (var line in lines)
+                {
+                    g.DrawLine(curvePen, line.Begin, line.End);
+                }
             }
+
+            DrawPoints(g);
         }
 
-        public int HitTest(PointF point)
+        public int NearestAnchorIndex(PointF pos, float radius)
         {
-            for (int i = 0; i < controlPoints.Count; i++)
+            if (MyPoints.Count == 0)
+                return -1;
+
+            float bestDistance = radius * radius;
+            int bestIndex = -1;
+
+            for (int i = 0; i < MyPoints.Count; i += 3)
             {
-                if (Distance(point, controlPoints[i]) < HitTestRadius)
-                    return i;
+                float d2 = DistanceSquared(pos, MyPoints[i]);
+                if (d2 < bestDistance)
+                {
+                    bestDistance = d2;
+                    bestIndex = i;
+                }
             }
-            return -1;
-        }
-
-        public void MovePoint(int pointIndex, PointF newPosition)
-        {
-            if (pointIndex < 0 || pointIndex >= controlPoints.Count) return;
-
-            controlPoints[pointIndex] = newPosition;
-
-            if (pointIndex % 3 == 0)
-            {
-                UpdateSmoothConnection(pointIndex);
-            }
-            else
-            {
-                int anchor = FindAnchorForControlPoint(pointIndex);
-                if (anchor != -1)
-                    UpdateSmoothConnection(anchor);
-            }
-        }
-
-        private void UpdateSmoothConnection(int anchorIndex)
-        {
-            if (anchorIndex < 0 || anchorIndex >= controlPoints.Count) return;
-            if (anchorIndex % 3 != 0) return;
-
-            if (anchorIndex > 0)
-                UpdateControlPointsForAnchor(anchorIndex);
-            if (anchorIndex < controlPoints.Count - 3)
-                UpdateControlPointsForAnchor(anchorIndex);
-        }
-
-        private void UpdateControlPointsForAnchor(int anchorIndex)
-        {
-            if (!SmoothConnectionsEnabled) return;
-            // anchorIndex должен быть кратен 3 (якорная точка)
-            if (anchorIndex % 3 != 0) return;
-            if (anchorIndex < 3 || anchorIndex > controlPoints.Count - 4) return;
-
-            PointF prevAnchor = controlPoints[anchorIndex - 3];
-            PointF nextAnchor = controlPoints[anchorIndex + 3];
-            PointF currentAnchor = controlPoints[anchorIndex];
-
-            Vector2 tangent = new Vector2(nextAnchor.X - prevAnchor.X, nextAnchor.Y - prevAnchor.Y).Normalize();
-
-            float distPrev = Distance(currentAnchor, prevAnchor);
-            float distNext = Distance(currentAnchor, nextAnchor);
-
-            // Контрольные точки по касательной
-            controlPoints[anchorIndex - 1] = new PointF(
-                currentAnchor.X - tangent.X * distPrev * 0.3f,
-                currentAnchor.Y - tangent.Y * distPrev * 0.3f);
-
-            controlPoints[anchorIndex + 1] = new PointF(
-                currentAnchor.X + tangent.X * distNext * 0.3f,
-                currentAnchor.Y + tangent.Y * distNext * 0.3f);
-        }
-
-        private int FindAnchorForControlPoint(int controlIndex)
-        {
-            if (controlIndex % 3 == 1)
-                return controlIndex + 1;
-            else if (controlIndex % 3 == 2)
-                return controlIndex - 1;
-            return -1;
+            return bestIndex;
         }
 
         private PointF CalculateBezierPoint(PointF p0, PointF p1, PointF p2, PointF p3, float t)
@@ -194,16 +130,167 @@ namespace CS332_Lab5.BezierCurves
             return new PointF(x, y);
         }
 
-        private PointF[] GetSegmentPoints(int segmentIndex)
+        public void Update()
         {
-            int startIndex = segmentIndex * 3;
-            return new PointF[]
+            lines.Clear();
+            if (MyPoints.Count < 4)
+                return;
+
+            for (int i = 0; i < MyPoints.Count - 3; i += 3)
             {
-                controlPoints[startIndex],
-                controlPoints[startIndex + 1],
-                controlPoints[startIndex + 2],
-                controlPoints[startIndex + 3]
-            };
+                PointF p0 = MyPoints[i];
+                PointF p1 = MyPoints[i + 1];
+                PointF p2 = MyPoints[i + 2];
+                PointF p3 = MyPoints[i + 3];
+
+                PointF prev = p0;
+                float t = STEP;
+                while (t <= 1.0f)
+                {
+                    PointF cur = CalculateBezierPoint(p0, p1, p2, p3, t);
+                    lines.Add(new Line(prev, cur, CurveWidth, CurveColor));
+                    prev = cur;
+                    t += STEP;
+                }
+            }
+        }
+
+        public void AddPoint(PointF clickPos)
+        {
+            int n = MyPoints.Count;
+
+            switch (n % 3)
+            {
+                case 0:
+                    // Просто добавляем новую опорную точку
+                    MyPoints.Add(clickPos);
+                    break;
+                case 1:
+                    // Первая контрольная точка после опорной
+                    if (n == 1)
+                    {
+                        // Если это вторая точка в кривой, просто добавляем
+                        MyPoints.Add(clickPos);
+                    }
+                    else
+                    {
+                        PointF lastAnchor = MyPoints[n - 1];
+                        PointF prevControl = MyPoints[n - 2];
+
+                        // Находим середину между последней опорной и предыдущей контрольной
+                        PointF mid = new PointF(
+                            (lastAnchor.X + prevControl.X) * 0.5f,
+                            (lastAnchor.Y + prevControl.Y) * 0.5f
+                        );
+
+                        // Перемещаем последнюю опорную на середину
+                        PointF coord = MyPoints[n - 1];
+                        MyPoints[n - 1] = mid;
+                        MyPoints.Add(coord);
+                        // Клик пользователя становится новой контрольной точкой
+                        MyPoints.Add(clickPos);
+                    }
+                    break;
+                case 2:
+                    // Вторая контрольная просто добавляется
+                    MyPoints.Add(clickPos);
+                    break;
+            }
+
+            Update();
+        }
+
+        public void RemovePoint(PointF pos, float r)
+        {
+            if (MyPoints.Count < 4)
+            {
+                Clear();
+                return;
+            }
+
+            int? idx = NearestAnchorIndex(pos, r);
+            if (idx.HasValue && idx.Value != -1)
+            {
+                int index = idx.Value;
+                if (index % 3 != 0)
+                    return;
+
+                if (index == 0)
+                {
+                    int end = Math.Min(index + 3, MyPoints.Count);
+                    MyPoints.RemoveRange(index, end - index);
+                }
+                else if (index + 1 == MyPoints.Count)
+                {
+                    MyPoints.RemoveRange(index - 2, 3);
+                }
+                else
+                {
+                    MyPoints.RemoveRange(index - 1, 3);
+                }
+                Update();
+            }
+        }
+
+        public void MovePoint(int index, PointF newPos)
+        {
+            if (index >= MyPoints.Count)
+                return;
+
+            PointF delta = new PointF(newPos.X - MyPoints[index].X, newPos.Y - MyPoints[index].Y);
+            MyPoints[index] = newPos;
+
+            // Если index — опорная точка, сдвинем соседние control
+            if (index % 3 == 0)
+            {
+                if (index > 0)
+                {
+                    MyPoints[index - 1] = new PointF(
+                        MyPoints[index - 1].X + delta.X,
+                        MyPoints[index - 1].Y + delta.Y);
+                }
+                if (index + 1 < MyPoints.Count)
+                {
+                    MyPoints[index + 1] = new PointF(
+                        MyPoints[index + 1].X + delta.X,
+                        MyPoints[index + 1].Y + delta.Y);
+                }
+            }
+
+            Update();
+        }
+
+        public void Clear()
+        {
+            MyPoints.Clear();
+            lines.Clear();
+            selectedPointIndex = -1;
+        }
+
+        // Сохраняем старый интерфейс для обратной совместимости
+        public void RemovePoint(int pointIndex)
+        {
+            if (pointIndex < 0 || pointIndex >= MyPoints.Count) return;
+
+            if (pointIndex % 3 == 0)
+            {
+                RemovePoint(MyPoints[pointIndex], HitTestRadius);
+            }
+            else
+            {
+                MyPoints.RemoveAt(pointIndex);
+                Update();
+            }
+        }
+
+        public int HitTest(PointF point)
+        {
+            for (int i = 0; i < MyPoints.Count; i++)
+            {
+                if (Distance(point, MyPoints[i]) < HitTestRadius)
+                    return i;
+            }
+            return -1;
         }
 
         private float Distance(PointF p1, PointF p2)
@@ -213,78 +300,11 @@ namespace CS332_Lab5.BezierCurves
             return (float)Math.Sqrt(dx * dx + dy * dy);
         }
 
-        // === Отрисовка ===
-        public void Draw(Graphics g)
+        private float DistanceSquared(PointF p1, PointF p2)
         {
-            if (controlPoints.Count < 4) return;
-
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-
-            if (ShowPolygon)
-                DrawControlPolygon(g);
-
-            DrawBezierCurves(g);
-            DrawControlPoints(g);
-        }
-
-        private void DrawBezierCurves(Graphics g)
-        {
-            using (Pen pen = new Pen(CurveColor, CurveWidth))
-            {
-                for (int i = 0; i < SegmentCount; i++)
-                {
-                    PointF[] seg = GetSegmentPoints(i);
-                    PointF[] curve = new PointF[SegmentsPerCurve + 1];
-
-                    for (int j = 0; j <= SegmentsPerCurve; j++)
-                    {
-                        float t = j / (float)SegmentsPerCurve;
-                        curve[j] = CalculateBezierPoint(seg[0], seg[1], seg[2], seg[3], t);
-                    }
-
-                    g.DrawLines(pen, curve);
-                }
-            }
-        }
-
-        private void DrawControlPolygon(Graphics g)
-        {
-            using (Pen polyPen = new Pen(PolygonColor, PolygonWidth) { DashStyle = DashStyle.Dash })
-            {
-                for (int i = 0; i < SegmentCount; i++)
-                {
-                    int start = i * 3;
-                    g.DrawLine(polyPen, controlPoints[start], controlPoints[start + 1]);
-                    g.DrawLine(polyPen, controlPoints[start + 2], controlPoints[start + 3]);
-
-                    if (ShowTangents)
-                        g.DrawLine(polyPen, controlPoints[start + 1], controlPoints[start + 2]);
-                }
-            }
-        }
-
-        private void DrawControlPoints(Graphics g)
-        {
-            for (int i = 0; i < controlPoints.Count; i++)
-            {
-                Color color = (i % 3 == 0) ? PointColor : TangentColor;
-                float r = (i % 3 == 0) ? PointRadius : PointRadius * 0.7f;
-
-                using (Brush brush = new SolidBrush(color))
-                    g.FillEllipse(brush, controlPoints[i].X - r, controlPoints[i].Y - r, r * 2, r * 2);
-
-                if (i == selectedPointIndex)
-                {
-                    using (Pen p = new Pen(Color.Yellow, 2))
-                        g.DrawEllipse(p, controlPoints[i].X - r - 2, controlPoints[i].Y - r - 2, (r + 2) * 2, (r + 2) * 2);
-                }
-            }
-        }
-
-        public void Clear()
-        {
-            controlPoints.Clear();
-            selectedPointIndex = -1;
+            float dx = p1.X - p2.X;
+            float dy = p1.Y - p2.Y;
+            return dx * dx + dy * dy;
         }
 
         public void SelectPoint(int index) => selectedPointIndex = index;
@@ -292,8 +312,26 @@ namespace CS332_Lab5.BezierCurves
 
         public void UpdateAllSmoothConnections()
         {
-            for (int i = 3; i < controlPoints.Count - 3; i += 3)
-                UpdateControlPointsForAnchor(i);
+            // В правильной реализации нет автоматического сглаживания
+            // Эта функция оставлена для обратной совместимости
+            Update();
+        }
+
+        // Вспомогательный класс для линий
+        private struct Line
+        {
+            public PointF Begin { get; }
+            public PointF End { get; }
+            public float Width { get; }
+            public Color Color { get; }
+
+            public Line(PointF begin, PointF end, float width, Color color)
+            {
+                Begin = begin;
+                End = end;
+                Width = width;
+                Color = color;
+            }
         }
     }
 
